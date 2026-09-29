@@ -503,7 +503,7 @@ function drawPreview() {
 }
 
 // ---------- manual corner dragging ----------
-let dragIdx = -1;
+let dragIdx = -1, dragMoved = false, dragOverlay = false;
 /** Index of the corner marker under the pointer (nearest within reach), or -1. */
 function cornerAt(e) {
   if (!state.camCorners || !preview._map) return -1;
@@ -517,20 +517,23 @@ preview.addEventListener('pointerdown', e => {
   if (dragIdx < 0) return;
   preview.setPointerCapture(e.pointerId);
   preview.style.cursor = 'grabbing';
-  if (!state.calibrating) send({ t: 'cal', kind: 'corners' });   // projector shows the matching corner markers
+  dragMoved = false;
+  dragOverlay = !state.calibrating && !state.laserCal;            // don't clobber the projector's calibration overlays
+  if (dragOverlay) send({ t: 'cal', kind: 'corners' });           // projector shows the matching corner markers
 });
 preview.addEventListener('pointermove', e => {
   if (dragIdx < 0) { preview.style.cursor = cornerAt(e) >= 0 ? 'grab' : ''; return; }
   const { ox, oy, dw, dh } = preview._map;
   const corners = state.camCorners.slice();
   corners[dragIdx] = { x: (e.offsetX - ox) / dw, y: (e.offsetY - oy) / dh };
-  try { setHomography(computeHomography(corners, CORNERS), corners); } catch {}   // degenerate quad mid-drag: keep the last valid one
+  try { setHomography(computeHomography(corners, CORNERS), corners); dragMoved = true; } catch {}   // degenerate quad mid-drag: keep the last valid one
 });
 function endDrag() {
   if (dragIdx < 0) return;
   dragIdx = -1; preview.style.cursor = '';
+  if (dragOverlay) send({ t: 'cal', kind: 'off' });
+  if (!dragMoved) return;                                         // a plain click must not count as calibration
   state.calDefault = false;
-  if (!state.calibrating) send({ t: 'cal', kind: 'off' });
   saveCal(); $('calInfo').textContent = 'Corners adjusted manually.'; log('calibration adjusted manually');
 }
 preview.addEventListener('pointerup', endDrag);
